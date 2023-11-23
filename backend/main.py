@@ -27,6 +27,7 @@ from routes.onboarding_routes import onboarding_router
 from routes.prompt_routes import prompt_router
 from routes.subscription_routes import subscription_router
 from routes.upload_routes import upload_router
+from scraper.controllers.controllers import scraper_router
 
 logger = get_logger(__name__)
 
@@ -70,6 +71,7 @@ app.include_router(prompt_router)
 app.include_router(notification_router)
 app.include_router(knowledge_router)
 app.include_router(contact_router)
+app.include_router(scraper_router)
 
 
 @app.exception_handler(HTTPException)
