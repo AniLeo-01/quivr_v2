@@ -1,5 +1,5 @@
 # pymupdf==1.22.3
-langchain==0.0.332
+langchain
 litellm==0.13.2
 # Markdown==3.4.4
 openai==0.27.8
@@ -13,7 +13,7 @@ fastapi==0.95.2
 python-multipart==0.0.6
 uvicorn==0.22.0
 pypandoc==1.11
-
+sqlalchemy
 docx2txt==0.8
 python-jose==3.3.0
 asyncpg==0.27.0
@@ -36,3 +36,7 @@ python-dotenv
 pytest-mock
 pytest-celery
 twilio==8.9.1
+sqlmodel
+pgvector==0.2.3
+beautifulsoup4==4.12.2
+fake_useragent
