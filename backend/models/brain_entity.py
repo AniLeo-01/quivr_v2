@@ -16,6 +16,9 @@ class BrainType(str, Enum):
 class BrainEntity(BaseModel):
     brain_id: UUID
     name: str
+    phone: Optional[str]
+    email: Optional[str]
+    email_password: Optional[str]
     description: Optional[str]
     temperature: Optional[float]
     model: Optional[str]
@@ -25,6 +28,7 @@ class BrainEntity(BaseModel):
     last_update: str
     brain_type: BrainType
     brain_definition: Optional[ApiBrainDefinition]
+    
 
     @property
     def id(self) -> UUID:

@@ -1,5 +1,10 @@
 version: "3"
 
+networks:
+  default:
+    name: local_shared_network
+    external: true
+
 services:
   frontend:
     env_file:

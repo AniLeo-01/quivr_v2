@@ -35,4 +35,4 @@ celery[sqs]
 python-dotenv
 pytest-mock
 pytest-celery
-
+twilio==8.9.1

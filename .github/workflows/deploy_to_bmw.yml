@@ -1,0 +1,35 @@
+name: Deploy to Hetzner VPS
+on:
+  push:
+    branches:
+      - devv
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Deploy to Hetzner VPS
+        env:
+          SSH_PASSWORD: ${{ secrets.PASSWORD }}
+          HOST: ${{ secrets.HOST }}
+          USER: root
+        run: |
+          # Install sshpass
+          sudo apt-get install -y sshpass
+          # Ensure the .ssh directory exists and has correct permissions
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          
+          # Create or clear the known_hosts file and set correct permissions
+          touch ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          # Add the host key to known_hosts
+          ssh-keyscan -H $HOST >> ~/.ssh/known_hosts
+          # Use sshpass to ssh using password
+          sshpass -p $SSH_PASSWORD ssh $USER@$HOST <<'ENDSSH'
+            cd /home/gptlab
+            git pull marco dev
+            docker-compose up --build -d
+            docker compose up --build -d
+          ENDSSH

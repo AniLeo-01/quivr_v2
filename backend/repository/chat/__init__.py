@@ -5,5 +5,8 @@ from .get_chat_by_id import get_chat_by_id
 from .get_chat_history import GetChatHistoryOutput, get_chat_history
 from .update_chat_history import update_chat_history
 from .update_message_by_id import update_message_by_id
-from .format_chat_history import format_history_to_openai_mesages
 from .format_chat_history import format_chat_history, format_history_to_openai_mesages
+from .create_whatsapp_chat import create_whatsapp_chat
+from .get_whatsapp_chats import get_whatsapp_chats
+from .get_email_chats import get_email_chats
+from .create_email_chat import create_email_chat

@@ -14,7 +14,8 @@ def format_history_to_openai_mesages(
 ) -> List[BaseMessage]:
     """Format the chat history into a list of Base Messages"""
     messages = []
-    messages.append(SystemMessage(content=system_message))
+    if system_message:
+        messages.append(SystemMessage(content=system_message))
     for human, ai in tuple_history:
         messages.append(HumanMessage(content=human))
         messages.append(AIMessage(content=ai))

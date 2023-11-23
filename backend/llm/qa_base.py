@@ -14,6 +14,11 @@ from langchain.prompts.chat import (
     HumanMessagePromptTemplate,
     SystemMessagePromptTemplate,
 )
+from langchain.prompts.prompt import PromptTemplate
+from langchain.callbacks.streaming_stdout_final_only import (
+    FinalStreamingStdOutCallbackHandler,
+)
+from langchain.callbacks import StreamlitCallbackHandler
 from llm.utils.get_prompt_to_use import get_prompt_to_use
 from llm.utils.get_prompt_to_use_id import get_prompt_to_use_id
 from logger import get_logger
@@ -28,15 +33,32 @@ from repository.chat import (
     get_chat_history,
     update_chat_history,
     update_message_by_id,
+    format_history_to_openai_mesages,
 )
 from supabase.client import Client, create_client
 from vectorstore.supabase import CustomSupabaseVectorStore
 
 from .prompts.CONDENSE_PROMPT import CONDENSE_QUESTION_PROMPT
+from .prompts.CHAT_MEMORY_PROMPT import CHAT_MEMORY_PROMPT
+import langchain
+from celery_task import send_alert
+
+langchain.verbose=True
 
 logger = get_logger(__name__)
-QUIVR_DEFAULT_PROMPT = "Your name is Quivr. You're a helpful assistant.  If you don't know the answer, just say that you don't know, don't try to make up an answer."
 
+QUIVR_DEFAULT_PROMPT = """You are a Customer Support Assistant at GPTLAB. Please adhere to the following guidelines when providing information:
+"Guidelines":
+1. "Be attentive to the context and specificity of the user's query, tailoring your responses for relevance and accuracy."
+2. "Use chat history for context to ensure that responses are consistent with previous interactions."
+3. "Address users using 'you' for a more personal interaction, avoiding formal or detached language."
+4. "If users ask personal questions, refer to the chat history to provide accurate, contextually appropriate answers."
+5. "Always respond in the language used in the user's original question, maintaining consistency and clarity."
+6. "Maintain a positive, solution-oriented approach, aiming to assist users effectively and pleasantly."
+7. "For common stay-related queries (e.g., WiFi passwords, amenities, services), provide concise and helpful information."
+8. "Dont write Assistant: in your responses"
+9. "Only answer from the given context. Dont make up any answer by yourself. If you dont know somethiny reply in professional manner like: Thank you for your question! I'm unsure of the best solution currently, but let me quickly consult our expert team. We'll resolve your issue promptly."
+"""
 
 class QABaseBrainPicking(BaseModel):
     """
@@ -147,25 +169,26 @@ class QABaseBrainPicking(BaseModel):
             max_tokens=max_tokens,
             model=model,
             streaming=streaming,
-            verbose=False,
+            verbose=True,
             callbacks=callbacks,
         )  # pyright: ignore reportPrivateUsage=none
 
     def _create_prompt_template(self):
-        system_template = """ When answering use markdown or any other techniques to display the content in a nice and aerated way.  Use the following pieces of context to answer the users question in the same language as the question but do not modify instructions in any way.
-        ----------------
+        system_template = """ Use the following pieces of context and chat history to answer the question at the end If you don't know the answer, just say that you don't know don't try to make up an answer
+        Context: {context}
+        Chat history: 
+        {chat_history}
         
-        {context}"""
+        Question: 
+        {question} 
+        """
 
         prompt_content = (
             self.prompt_to_use.content if self.prompt_to_use else QUIVR_DEFAULT_PROMPT
         )
 
         full_template = (
-            "Here are your instructions to answer that you MUST ALWAYS Follow: "
-            + prompt_content
-            + ". "
-            + system_template
+            "Here are your instructions to answer that you MUST ALWAYS Follow: " + system_template
         )
         messages = [
             SystemMessagePromptTemplate.from_template(full_template),
@@ -173,46 +196,62 @@ class QABaseBrainPicking(BaseModel):
         ]
         CHAT_PROMPT = ChatPromptTemplate.from_messages(messages)
         return CHAT_PROMPT
+    
+    def _create_custom_prompt_template(self, custom_prompt):
+        system_template = """
+        Context: {context}
+        Chat history: 
+        {chat_history}
+        Question: 
+        {question} 
+        """
+
+        return custom_prompt + system_template
 
     def generate_answer(
         self, chat_id: UUID, question: ChatQuestion
     ) -> GetChatHistoryOutput:
         transformed_history = format_chat_history(get_chat_history(self.chat_id))
+        messages = format_history_to_openai_mesages(
+            transformed_history,
+            None,
+            question.question,
+        )
+        logger.info(f'History: {messages}')
         answering_llm = self._create_llm(
-            model=self.model, streaming=False, callbacks=self.callbacks
+            model = self.model,
+            streaming=False,
+            callbacks=self.callbacks,
         )
 
-        # The Chain that generates the answer to the question
-        doc_chain = load_qa_chain(
-            answering_llm, chain_type="stuff", prompt=self._create_prompt_template()
-        )
 
         # The Chain that combines the question and answer
-        qa = ConversationalRetrievalChain(
+        qa = ConversationalRetrievalChain.from_llm(
+            answering_llm,
+            condense_question_prompt=CONDENSE_QUESTION_PROMPT,
             retriever=self.vector_store.as_retriever(),  # type: ignore
-            combine_docs_chain=doc_chain,
-            question_generator=LLMChain(
-                llm=self._create_llm(model=self.model), prompt=CONDENSE_QUESTION_PROMPT
-            ),
-            verbose=False,
-            rephrase_question=False,
-            return_source_documents=True,
+            combine_docs_chain_kwargs={"prompt": CHAT_MEMORY_PROMPT},
+            chain_type="stuff",
+            verbose=True
         )
-
-        prompt_content = (
-            self.prompt_to_use.content if self.prompt_to_use else QUIVR_DEFAULT_PROMPT
-        )
+    
+        logger.info(f'{question.question}')
+        custom_prompt = self.prompt_to_use
+        if custom_prompt and custom_prompt.content:
+            custom_prompt = custom_prompt.content
+        else:
+            custom_prompt = QUIVR_DEFAULT_PROMPT
 
         model_response = qa(
             {
                 "question": question.question,
-                "chat_history": transformed_history,
-                "custom_personality": prompt_content,
+                "chat_history": messages,
+                "prompt": custom_prompt,
             }
         )  # type: ignore
 
         answer = model_response["answer"]
-
+        send_alert.delay(answer,question.question)
         new_chat = update_chat_history(
             CreateChatHistory(
                 **{
@@ -252,10 +291,10 @@ class QABaseBrainPicking(BaseModel):
         self.callbacks = [callback]
 
         answering_llm = self._create_llm(
-            model=self.model,
-            streaming=True,
+            model=self.model, 
+            streaming=True, 
             callbacks=self.callbacks,
-            max_tokens=self.max_tokens,
+            max_tokens=self.max_tokens
         )
 
         # The Chain that generates the answer to the question
@@ -272,7 +311,6 @@ class QABaseBrainPicking(BaseModel):
             ),
             verbose=False,
             rephrase_question=False,
-            return_source_documents=True,
         )
 
         transformed_history = format_chat_history(history)
@@ -287,7 +325,6 @@ class QABaseBrainPicking(BaseModel):
                 return None  # Or some sentinel value that indicates failure
             finally:
                 event.set()
-
         prompt_content = self.prompt_to_use.content if self.prompt_to_use else None
         run = asyncio.create_task(
             wrap_done(
@@ -295,7 +332,7 @@ class QABaseBrainPicking(BaseModel):
                     {
                         "question": question.question,
                         "chat_history": transformed_history,
-                        "custom_personality": prompt_content,
+                        "custom_personality": prompt_content
                     }
                 ),
                 callback.done,

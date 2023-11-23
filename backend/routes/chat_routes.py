@@ -1,8 +1,12 @@
 from typing import List, Optional
 from uuid import UUID
 from venv import logger
-
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+import os
+import re
+from bs4 import BeautifulSoup
+from logger import get_logger
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Form
+from starlette.responses import Response
 from fastapi.responses import StreamingResponse
 from llm.qa_base import QABaseBrainPicking
 from llm.qa_headless import HeadlessQA
@@ -10,6 +14,8 @@ from middlewares.auth import AuthBearer, get_current_user
 from models import Brain, BrainEntity, Chat, ChatQuestion, UserUsage, get_supabase_db
 from models.databases.supabase.chats import QuestionAndAnswer
 from modules.user.entity.user_identity import UserIdentity
+from modules.user.repository import get_user_identity
+from repository.brain import get_brain_details, get_default_user_brain_or_create_new, get_brain_by_phone
 from repository.chat import (
     ChatUpdatableProperties,
     CreateChatProperties,
@@ -18,6 +24,8 @@ from repository.chat import (
     get_chat_by_id,
     get_user_chats,
     update_chat,
+    create_whatsapp_chat,
+    get_whatsapp_chats
 )
 from repository.chat.add_question_and_answer import add_question_and_answer
 from repository.chat.get_chat_history_with_notifications import (
@@ -31,9 +39,12 @@ from routes.chat.utils import (
     check_user_requests_limit,
     delete_chat_from_db,
 )
+from celery_task import process_and_send_message, process_and_send_email, process_and_send_message_sales
+
 
 chat_router = APIRouter()
 
+logger = get_logger(__name__)
 
 @chat_router.get("/chat/healthz", tags=["Health"])
 async def healthz():
@@ -271,3 +282,113 @@ async def add_question_and_answer_handler(
     Add a new question and anwser to the chat.
     """
     return add_question_and_answer(chat_id, question_and_answer)
+
+@chat_router.post("/chat/whatsapp")
+async def read_item(WaId: str = Form(...), Body: str = Form(...), To: str = Form(...)):
+    """
+    Generate response from whatsapp without requiring authentication
+    """
+    logger.info(f"Recepient: {WaId}")
+    logger.info(f"Admin: {To}")
+    try:
+        process_and_send_message.delay(WaId, Body, To)
+        return {"status": "processing"}
+    except HTTPException as e:
+        raise e
+    
+@chat_router.post("/chat/email", tags=["Chat"])
+async def create_email_question_handler(
+    Admin_Email: Optional[str] = Form(None),
+    From: Optional[str] = Form(None),
+    Subject: Optional[str] = Form(None),
+    Body: Optional[str] = Form(None),
+        Reply_To: Optional[str] = Form(None),
+):
+    # Printing received data for demonstration
+    if Reply_To is not None:
+        logger.info(f"Reply to: {Reply_To}")
+        if "airbnb" in Reply_To.lower():
+            logger.info("This is a direct reply to airbnb.")
+            From = Reply_To
+
+    #printing the received data for demonstration
+    logger.info(f"From: {From}")
+    logger.info(f"Subject: {Subject}")
+    logger.info(f"Body: {Body}")
+    extracted_text = None
+    ThreadId = None
+    if "<div>" in Body.lower():  # This is a simplistic check to detect html
+        Body = extract_user_message(Body)
+        extracted_text = extract_user_message(Body)
+        ThreadId = extract_thread_id(Body)
+        logger.info(f"ThreadId: {ThreadId}")
+        logger.info(f"Extracted Text: {Body}")
+        logger.info(f"Extracted Text: {extracted_text}")
+        email_text = extracted_text
+    else:
+        email_text = Body
+
+    process_and_send_email.delay(Admin_Email, email_text, From, Subject, ThreadId)
+    return {"status": "success", "message": "answer"}
+    
+
+
+@chat_router.post("/chat/whatsapp/sales")
+async def read_item(WaId: str = Form(...), Body: str = Form(...), To: str = Form(...)):
+    """
+#     Generate an answer for a question without requiring authentication.
+#     """
+    logger.info(f"Recepient: {WaId}")
+    logger.info(f"Admin: {To}")
+    client = WaId
+    admin = To
+    process_and_send_message_sales.delay(client, admin, Body)
+    try:
+        return {"status": "processing"}
+    except HTTPException as e:
+        raise e
+
+
+def extract_user_message(email_html_content):
+    soup = BeautifulSoup(email_html_content, 'html.parser')
+
+    # First attempt: Try extracting based on a div with specific styles
+    user_message_div = soup.find('div', style=lambda x: x and 'font-weight:300;font-family:' in x)
+    if user_message_div:
+        return user_message_div.get_text(strip=True)
+
+    # Second attempt: Try extracting based on a p within a div with specific styles
+    for table in soup.find_all('table'):
+        for row in table.find_all('tr'):
+            for cell in row.find_all('td'):
+                div = cell.find('div', class_='regular')
+                if div:
+                    p = div.find('p', class_='regular')
+                    if p:
+                        user_message = p.get_text(strip=True)
+                        return user_message
+                    
+    # Third attempt: Try extracting based on div with attribute dir="ltr"
+    div_dir_ltr = soup.find('div', dir='ltr')
+    if div_dir_ltr:
+        return div_dir_ltr.get_text(strip=True)
+
+    
+    # If no message is found
+    return None
+
+
+def extract_thread_id(email_html_content):
+    soup = BeautifulSoup(email_html_content, 'html.parser')
+
+    # Find all <a> tags in the email content
+    links = soup.find_all('a', href=True)
+
+    for link in links:
+        href = link['href']
+
+        # Use a regular expression to extract the thread ID from the URLs
+        thread_id_match = re.search(r'/thread/(\d+)', href)
+        if thread_id_match:
+            return thread_id_match.group(1)
+    return None

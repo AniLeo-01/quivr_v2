@@ -24,3 +24,9 @@ CRAWL_DEPTH=1
 PREMIUM_MAX_BRAIN_NUMBER=30
 PREMIUM_MAX_BRAIN_SIZE=10000000
 PREMIUM_DAILY_CHAT_CREDIT=100
+
+# Twilio API credentials
+TWILIO_AUTH_TOKEN=your_twilio_auth_token_here
+
+
+ADMIN_NUMBER=admin-number-on-which-alert-will-be-send

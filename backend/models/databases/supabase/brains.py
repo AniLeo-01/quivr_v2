@@ -20,6 +20,7 @@ logger = get_logger(__name__)
 
 class CreateBrainProperties(BaseModel, extra=Extra.forbid):
     name: Optional[str] = "Default brain"
+    phone: Optional[str]
     description: Optional[str] = "This is a description"
     status: Optional[str] = "private"
     model: Optional[str]
@@ -45,6 +46,9 @@ class BrainUpdatableProperties(BaseModel):
     max_tokens: Optional[int]
     status: Optional[str]
     prompt_id: Optional[UUID]
+    phone: Optional[str]
+    email: Optional[str]
+    email_password: Optional[str]
 
     def dict(self, *args, **kwargs):
         brain_dict = super().dict(*args, **kwargs)
@@ -60,6 +64,31 @@ class BrainQuestionRequest(BaseModel):
 class Brain(Repository):
     def __init__(self, supabase_client):
         self.db = supabase_client
+
+    #fetch brain object by phone
+    def get_brain_by_phone(self, phone:str) -> Optional[BrainEntity]:
+        response = (
+            self.db.from_("brains")
+            .select("id:brain_id, name, *")
+            .filter("phone", "eq", phone)
+            .execute()
+        ).data
+        if len(response) == 0:
+            return None
+        return BrainEntity(**response[0])
+    
+    def get_brain_by_email(self, email: str) -> BrainEntity | None
+        response = (
+            self.db.from_("brains")
+            .select("id:brain_id, name, *")
+            .filter("email", "eq", email)
+            .execute()
+        ).data
+
+        if len(response) == 0:
+            return None
+
+        return BrainEntity(**response[0]
 
     def create_brain(self, brain: CreateBrainProperties):
         response = (

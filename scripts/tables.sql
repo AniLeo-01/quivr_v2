@@ -16,6 +16,15 @@ CREATE TABLE IF NOT EXISTS chats(
     chat_name TEXT
 );
 
+-- Create chat_whatsapp table
+CREATE TABLE IF NOT EXISTS chat_whatsapp(
+    id uuid not null default gen_random_uuid (),
+    created_at timestamp with time zone null default now(),
+    phone character varying null,
+    chat_id uuid null,
+    constraint chat_whatsapp_pkey primary key (id),
+    constraint chat_whatsapp_chat_id_fkey foreign key (chat_id) references chats (chat_id)
+);
 
 -- Create vector extension
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -448,3 +457,64 @@ SELECT '20231116102600_add_get_user_email_by_user_id'
 WHERE NOT EXISTS (
     SELECT 1 FROM migrations WHERE name = '20231116102600_add_get_user_email_by_user_id'
 );
+
+create table IF NOT EXISTS chat_whatsapp(
+  id uuid not null default get_random_uuid(),
+  created_at timestamp with time zone null default now(),
+  phone character varying null,
+  chat_id uuid null,
+  constraint chat_whatsapp_pkey primary key (id),
+  constraint chat_whatsapp_chat_id_fkey foreign key (chat_id) 
+        references chats (chat_id) ON DELETE CASCADE
+);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema='public' 
+    AND table_name = 'brains' 
+    AND column_name = 'phone'
+  )
+  THEN 
+    ALTER TABLE public.brains ADD COLUMN phone character varying;
+  END IF;
+END $$;
+
+create table IF NOT EXISTS chat_email (
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
+    created_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now(),
+    email CHARACTER VARYING NULL,
+    chat_id UUID NULL,
+    CONSTRAINT chat_email_pkey PRIMARY KEY (id),
+    CONSTRAINT chat_email_chat_id_fkey FOREIGN KEY (chat_id) 
+        REFERENCES chats (chat_id) ON DELETE CASCADE
+) TABLESPACE pg_default;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema='public' 
+    AND table_name = 'brains' 
+    AND column_name = 'email'
+  )
+  THEN
+    ALTER TABLE public.brains ADD COLUMN email character varying;
+  END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM   information_schema.columns 
+        WHERE  table_schema = 'public' 
+        AND    table_name   = 'brains' 
+        AND    column_name  = 'email_password'
+    )
+    THEN 
+        ALTER TABLE public.brains ADD COLUMN email_password character varying;
+    END IF; 

@@ -2,6 +2,7 @@ from .create_brain import create_brain
 from .create_brain_user import create_brain_user
 from .delete_brain_users import delete_brain_users
 from .get_brain_by_id import get_brain_by_id
+from .get_brain_by_phone import get_brain_by_phone
 from .get_public_brains import get_public_brains
 from .get_brain_details import get_brain_details
 from .get_brain_for_user import get_brain_for_user
@@ -14,3 +15,4 @@ from .get_user_brains import get_user_brains
 from .set_as_default_brain_for_user import set_as_default_brain_for_user
 from .update_brain import update_brain_by_id
 from .update_user_rights import update_brain_user_rights
+from .get_brain_by_email import get_brain_by_email

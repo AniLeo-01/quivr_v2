@@ -26,6 +26,16 @@ class Chats(Repository):
     def create_chat(self, new_chat):
         response = self.db.table("chats").insert(new_chat).execute()
         return response
+    
+    #create a new whatsapp chat in the chat_whatsapp table
+    def create_whatsapp_chat(self, new_chat):
+        response = self.db.table("chat_whatsapp").insert(new_chat).execute()
+        return response
+    
+    #create a new email chat in the chat_email table
+    def create_email_chat(self, new_chat):
+        response = self.db.table("chat_email").insert(new_chat).execute()
+        return response
 
     def get_chat_by_id(self, chat_id: str):
         response = (
@@ -76,6 +86,27 @@ class Chats(Repository):
         )
         return response
 
+    #fetch whatsapp chats from the chat_whatsapp table with phone as filter and order by created_at
+    def get_whatsapp_chats(self, phone: str):
+        response = (
+            self.db.from_("chat_whatsapp")
+            .select("chat_id,phone,created_at")
+            .filter("phone", "eq", phone)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        return response
+
+    def get_email_chats(self, email: str):
+        response = (
+            self.db.from_("chat_email")
+            .select("chat_id,email,created_at")
+            .filter("email", "eq", email)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        return response
+    
     def update_chat_history(self, chat_history: CreateChatHistory):
         response = (
             self.db.table("chat_history")
