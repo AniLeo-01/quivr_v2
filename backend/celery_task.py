@@ -13,7 +13,7 @@ from llm.qa_base import QABaseBrainPicking
 from models import ChatQuestion
 from repository.chat import get_whatsapp_chats, create_chat, create_whatsapp_chat, CreateChatProperties, create_email_chat, get_email_chats
 from email.mime.multipart import MIMEMultipart
-import email.mime.text import MIMEText
+from email.mime.text import MIMEText
 import smtplib
 from fastapi import HTTPException
 import openai
@@ -41,12 +41,17 @@ def create_embedding_for_document(brain_id, doc_with_metadata, file_sha1):
 
 @shared_task
 def process_and_send_message(WaId, Body, To):
+
     admin_number = To
-    #fetch the user_id of the ADMIN from the env file
+    # You can optionally validate the brain_id here if needed.
+
+    # Get user identity from the ADMIN_USER_ID set as env variable
     user_id = os.environ.get("ADMIN_USER_ID")
-    #using the admin user_id, fetch the user identity object
     user = get_user_identity(user_id)
-    #fetch brain to get the chats associated with the admin user
+
+    # Get brain to associate admin users chat with. If no brain exists
+    # with the reciever phone get default user brain or create new brain
+
     split_text = admin_number.split("whatsapp:")
 
     # Getting the second part which is the phone number
@@ -54,42 +59,42 @@ def process_and_send_message(WaId, Body, To):
     logger.info(f"admin number: {match}")
     brain_phone = match
     brain = get_brain_by_phone(brain_phone)
-    logger.info(f"Brain fetched for phone {brain_phone}: {brain}")
+    logger.info(f'Brain fetched by phone {brain_phone}:  {brain}')
 
     if not brain:
-        logger.info('No Brain fetched for phone... Fetching default brain for user')
-        #create the brain for the user, if it doesn't exist create a new brain object
+        logger.info("No Brain found for receiver phone")
+        logger.info("Fetching Default brain for user")
         brain = get_default_user_brain_or_create_new(user)
-    
-    #create a ChatQuestion object with the whatsapp id and the question
-    chat_question = ChatQuestion(question=Body, WaId = WaId)
+
+    # Create Chat Question and set its brain_id
+    chat_question = ChatQuestion(question=Body, WaId=WaId)
     chat_question.brain_id = brain.id
 
-    #fetch the existing whatsapp chats for the WaID if any
+    # Check for existing chats with the same client phone and create
+    # new chat if no previous chatb exists
     existing_chat = get_whatsapp_chats(WaId)
-    #if its a new chat
     if len(existing_chat) == 0:
-        #here we are setting the name of the chat to the WaId (we can define it by the name as well)
         chat = create_chat(user_id=user_id, chat_data=CreateChatProperties(name=WaId))
         chat_id = chat['chat_id']
         create_whatsapp_chat(chat_id=chat_id, phone=WaId)
-    #if its an existing chat
     else:
         chat = existing_chat[0]
-        chat_id = chat["chat_id"]
+        chat_id = chat.chat_id
 
-    try:
-        if brain:
-            #create a QABaseBrainPicking object
-            gpt_answer_generator = QABaseBrainPicking(
-                chat_id=str(chat_id),
-                model='gpt-4',
-                brain_id=str(brain.id),
-                streaming=True,
-                temperature=0.1,
-            )
-            chat_answer = gpt_answer_generator.generate_answer(chat_id, chat_question)
-        send_whatsapp_message(chat_answer.assistant, admin_number, WaId)
+    if brain:
+        gpt_answer_generator = QABaseBrainPicking(
+            chat_id=str(chat_id),
+            model="gpt-4",  # type: ignore
+            brain_id=str(brain.id),
+            streaming=True,
+            temperature=0.1,
+            max_tokens=256,
+            prompt_id=None
+        )
+        # Assuming `generate_answer` is a function that generates the answer.
+        chat_answer = gpt_answer_generator.generate_answer(chat_id, chat_question)
+
+    send_whatsapp_message(chat_answer.assistant, admin_number, WaId)
 
 def send_whatsapp_message(message, from_, to):
     account_sid = os.environ.get("TWILIO_ACCOUNT_SID")

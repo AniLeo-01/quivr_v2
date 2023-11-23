@@ -77,7 +77,7 @@ class Brain(Repository):
             return None
         return BrainEntity(**response[0])
     
-    def get_brain_by_email(self, email: str) -> BrainEntity | None
+    def get_brain_by_email(self, email: str) -> BrainEntity | None:
         response = (
             self.db.from_("brains")
             .select("id:brain_id, name, *")
@@ -88,7 +88,7 @@ class Brain(Repository):
         if len(response) == 0:
             return None
 
-        return BrainEntity(**response[0]
+        return BrainEntity(**response[0])
 
     def create_brain(self, brain: CreateBrainProperties):
         response = (
